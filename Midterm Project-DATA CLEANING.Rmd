@@ -1,0 +1,170 @@
+---
+title: "Midterm Project-Data Cleaning"
+author: "Ang Li"
+date: "2017/11/13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+pacman::p_load("ggplot2","knitr","lme4","dplyr","reshape","car","arm","RMySQL")
+```
+
+```{r}
+library(RMySQL)
+library(lme4)
+library(arm)
+library(dplyr)
+library(reshape)
+```
+
+```{r}
+mydb = dbConnect(MySQL(), user='mssp', password='mssp2017', dbname='yelp_db', host='45.63.90.29')
+```
+
+```{r}
+dbListTables(mydb) 
+#This will return a list of the tables in our connection. 
+```
+
+```{r}
+dbListFields(mydb, 'checkin')
+
+```
+
+```{r}
+business.sql = dbSendQuery(mydb, "
+                          select id AS business_id, name AS business_name, state, stars, is_open 
+                        from business
+                          
+                           " )  
+business = fetch(business.sql, n = -1)  
+
+category.sql = dbSendQuery(mydb, "
+                          select *
+                          
+                          from category
+                        
+                           " )  
+category = fetch(category.sql, n = -1)   
+
+user.sql = dbSendQuery(mydb, "
+                          select id AS user_id, name AS user_name, average_stars AS average_stars_give 
+                          from user
+                          
+                           " )  
+user = fetch(user.sql, n = -1)   
+
+review.sql = dbSendQuery(mydb, "
+                          select business_id, user_id, stars AS stars_received
+                          from review
+                          
+                           " )  
+review = fetch(review.sql, n = -1)  
+
+attribute.sql = dbSendQuery(mydb, "
+                          select *
+                          
+                          from attribute
+                        
+                           " )  
+attribute = fetch(attribute.sql, n = -1) 
+```
+
+
+
+```{r}
+data<-subset(category,category=="Restaurants")
+data1<-merge(business,data,by="business_id")
+data2<-merge(data1,review, by="business_id")
+# data3<-merge(data2,user,by="user_id")
+colnames(attribute)[2] <- "condition"
+
+attri1<-subset(attribute, condition=="NoiseLevel")
+attri1$value<-ifelse(attri1$value=="very_loud",4, ifelse(attri1$value=="loud",3, ifelse(attri1$value=="average",2, 1)))
+colnames(attri1)[3]<-"noiselevel"
+attri1<-attri1[,-2]
+
+attri2<-subset(attribute, condition=="RestaurantsDelivery")
+colnames(attri2)[3]<-"Delivery"
+attri2$Delivery<-as.numeric(attri2$Delivery)
+attri2<-attri2[,-2]
+
+attri3<-subset(attribute, condition=="WiFi")
+attri3$value<-ifelse(attri3$value=="no",0, ifelse(attri3$value=="paid",1, ifelse(attri3$value=="free",2, NA)))
+colnames(attri3)[3]<-"WiFi"
+attri3<-attri3[,-2]
+
+data4<-merge(attri1,attri2,by="business_id")
+data5<-merge(data4,attri3,by="business_id")
+
+data21 = data2 %>%
+  dplyr::select(business_id,business_name,is_open,stars,state,stars_received) %>%
+  group_by(business_id) %>%
+  summarize(Avstars=mean(stars_received, na.rm = T))
+data22<- melt(data21,id.vars='business_id')
+colnames(data22)[3]<-"average_stars"
+data22<-data22[,-2]
+
+data6<-merge(data1,data5,by="business_id")
+data7<-merge(data6,data22,by="business_id")
+data8<-merge(review,user,by="user_id")
+data8 <- data8[order(data8[,2]),]
+colnames(data8)[5]<-"Av_usergave"
+
+data81 = data8 %>%
+  dplyr::select(business_id,user_id, Av_usergave) %>%
+  group_by(business_id) %>%
+  summarize(Avuser=mean(Av_usergave, na.rm = T))
+
+data9<-merge(data7,data81,by="business_id")
+data10<-data9[!(data9$state=="01"),]
+
+attri7<-subset(attribute, condition=="HasTV")
+colnames(attri7)[3]<-"TV"
+attri7$TV<-as.numeric(attri7$TV)
+attri7<-attri7[,-2]
+data11<-merge(data10,attri7,by="business_id")
+
+
+attri8<-subset(attribute, condition=="Alcohol")
+attri8$value<-ifelse(attri8$value=="none",0, ifelse(attri8$value=="beer_and_wine",1, ifelse(attri8$value=="full_bar",2, 999)))
+colnames(attri8)[3]<-"Alcohol"
+attri8<-attri8[,-2]
+
+data12<-merge(data11,attri8,by="business_id")
+
+
+attri8<-subset(attribute, condition=="OutdoorSeating")
+colnames(attri8)[3]<-"OutdoorSeating"
+attri8$OutdoorSeating<-as.numeric(attri8$OutdoorSeating)
+attri8<-attri8[,-2]
+data13<-merge(data12,attri8,by="business_id")
+
+
+attri9<-subset(attribute, condition=="RestaurantsReservations")
+colnames(attri9)[3]<-"Reservations"
+attri9$Reservations<-as.numeric(attri9$Reservations)
+attri9<-attri9[,-2]
+data14<-merge(data13,attri9,by="business_id")
+
+attri10<-subset(attribute, condition=="RestaurantsAttire")
+attri10$value<-ifelse(attri10$value=="casual",1, ifelse(attri10$value=="dressy",2, ifelse(attri10$value=="formal",3, 999)))
+colnames(attri10)[3]<-"Attire"
+attri10<-attri10[,-2]
+data15<-merge(data14,attri10,by="business_id")
+
+cate1<-subset(category,category=="Chinese" | category=="Mexican" |category=="Japanese" |category=="American (Traditional)" |category=="Italian" |category=="Thai" |category=="French" |category=="Indian" |category=="British" |category=="Korean")
+
+data15<-data15[,-5]
+data15<-data15[,-5]
+
+data16<-merge(data15,cate1, by="business_id")
+  
+write.csv(data16, file = "Yelpdata_1.csv")
+```
+
+
+
+
+
