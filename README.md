@@ -1,9 +1,10 @@
 # 684-midterm-project
-This is 684-Midterm-Project for Ang Li               last modification: 2017/12/14 8:00am
-\newline
-\newline
-
-Guide: 
+This is 684-Midterm-Project for Ang Li         <br />      
+last modification: 2017/12/14 8:00am
+<br />
+<br />
+<br />
+Guide: <br />
   Things you might be interested in: 
 ## 1. Final Report--- Yelp.pdf
   
