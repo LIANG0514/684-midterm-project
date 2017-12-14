@@ -1,0 +1,361 @@
+---
+title: "Midterm Project---Yelp"
+author: "Ang Li"
+date: "2017/12/2"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,out.width="0.9\\linewidth",dev="pdf",fig.align  = 'center')
+pacman::p_load("ggplot2","knitr","lme4","dplyr","reshape","car","arm","gridExtra","lmerTest","MuMIn","merTools")
+```
+#1. Project Description
+
+##1.1 Overview 
+
+###The love of people for delicious food has never decreased. Yelp, as an informative platform, gives us opportunity to view, learn, search and comment for restaurants or other business easily. As it becomes more and more popular as an application, the reviews and comments that customers leave on Yelp have larger and larger impact on other customers’ choices. When we are looking at the list of restaurants, the first thing we will check is the “stars” that they have, scaled from 0 to 5. There are a lot of factors that can influence a restaurant's score. In this way, I come up with the question: WHAT DETERMINES A RESTAURANT'S SCORE? Beside the extent of love of people for the food it provide, a restaurant's facilities, food categories or customers' personal behaviors can also become factors that influence the score on Yelp. I managed to extract data in 10 kinds of cuisines, such as Chinese, Mexican, Janpanese, American(Traditional) and etc, as I will show later in the project.  
+
+##1.2 Research Question Statement  
+
+###In this project, my goal is to study and find out which factors that may have an impact on the stars for restaurant, and the extents those factors contribute, under different type of cuisines.  
+
+  
+```{r echo=FALSE}
+library(lme4)
+library(dplyr)
+library(reshape)
+library(ggplot2)
+library(MASS)
+library(gridExtra)
+library(lmerTest)
+library(MuMIn)
+library(merTools)
+```
+
+##1.3 Data and Big Data Challenges
+
+###1.3.1 Data choosing and cleaning
+###I use the data on the website of Yelp, which are used for "Yelp Data Challenges". The data has been divided into several datasets based on its categories, such as business, user, review, etc. Each of them is a large dataset with up to 4.7 million rows. The information that I want is dispersed in serveral datasets, so I first used the platform of SQL on R to extract columns I want from each dataset, and then I merged those columns into one single dataset, using two identifiers: business_id and user_id. I also used dplyr package to sort and clean data so that I can a tidy result for each identifier. 
+###My data contains basically 3 things: Basic information,such as their names and state location; Conditions, such as whether they have TV; And stars they receive from customers. 
+  
+###Here is an example,which shows the first 5 rows of the dataset:
+```{r echo=FALSE}
+yelp<-read.csv("Yelpdata_1.csv")
+yelp<-yelp[,-c(1,5)]
+yelp[1:5,]
+set.seed(200)
+yelp1 = yelp[sample(nrow(yelp),15000),]
+yelp2<-yelp[!rownames(yelp) %in% rownames(yelp1),]
+```
+###1.3.2 Data explanation
+###Here are the explanations for some crucial variables (The entire explanation can be found at Appendix): 
+  
+###average_stars: The average stars that customers give for the restaurant on Yelp given the data we have online.  
+###Avuser: For a single business, the average score that its users(customers) usually give for commenting restaurants on their accounts. For each restaurant, I summarize the average stars that each of commented customer gives for commenting on restaurants, adding them together and then calculated a mean of this for each restaurants.  
+###category: The type of food that restaurant provide.  
+###NoiseLevel: The noise level of the restaurant; 4---very loud; 3---loud; 2---average; 1---quiet.  
+###WiFi: The wifi type for restaurant; 2---free; 1---paid; 0---no. 
+###Alcohol: The alcohol serving type in the restaurant: 2---full_bar; 1---beer_and_wine; 0---none.  
+  
+#2. EDA
+##2.1 Boxplot of Average stars for each category
+```{r echo=FALSE}
+ggplot(yelp, aes(category, average_stars))+
+  geom_boxplot(col="tomato3")+
+  xlab("Restaurant Category")+
+  ylab("Average Stars")+
+  theme(axis.text.x = element_text(angle =52,hjust = 1,size=9))
+```
+###This boxplot shows the comprison of average stars that restaurant received for each cuisine category. From this plot we can find out that the median of average stars that each type of cuisine received are basically close to each other. Among these scores, French cuisine has a highest median score, While American Tradisional cuisine and Chinese cuisine receive relatively lower median scores. And according to the shape of rectangles between upper and lower quartiles, the rectangle for Mexican restaurants seem to be a little longer compare to other type of restaurants. This suggests that, the scores that Mexican food restaurants vary a little bit more compare to other type of restaurants. Also, there exist some outliers for each category, which are numerically distant from the rest of data. This is also reasonable since there are some "bad" restaurants that do not serve customers well.  
+  
+
+##2.2 Point plot of mean given stars and mean received stars
+```{r echo=FALSE}
+ggplot(yelp, aes(Avuser, average_stars))+
+  geom_point(col="Navy")+
+  xlab("Average Score User Usually Gives")+
+  ylab("Average Score Restaurant Receives")
+```
+###This plot shows the relationship between the average score that calculated from users' grading history and the average scores that restaurants receive. It is clear that there is a positive correlation. This also shows the subjectivity of grading restaurants from each users, which means that each Yelp app user has his or her own standard and preference, for example, 4 might be a low score for someone while 2 is a relatively high score for a "cynical" person. 
+
+##2.3 Barplot of mean noise level for each category
+```{r echo=FALSE}
+Noise =yelp %>%
+  group_by(category)%>%
+  summarize(AvNoise=mean(noiselevel, na.rm = T))
+Noise2<- melt(Noise,id.vars='category')
+ggplot(Noise2, aes(y=value,x=reorder(category,-value))) + 
+  geom_bar(stat = "identity", fill = "gold2")+
+  xlab("Restaurant Category") +
+  ylab("Noise Level") +
+  theme(axis.text.x = element_text(angle = 50,hjust = 1,size=9))
+
+```
+###This plot shows the mean noise level for each type of restaurants. From the plot we can see that noise levels are ordered from high to low, and none of the types of restaurants has high level of noise. American Traditional has the relatively highest mean noise level(around 2.0), while Thai restaurants have the lowest. This might be a factor that can influence on the stars a restaurant receive, the extent may change according to category. 
+
+##2.4 The barplot of count of each variable
+```{r, echo=FALSE}
+yelp$Attire<-factor(yelp$Attire)
+yelp$noiselevel<-factor(yelp$noiselevel)
+yelp$Alcohol<-factor(yelp$Alcohol)
+yelp$WiFi<-factor(yelp$WiFi)
+yelp$TV<-factor(yelp$TV)
+yelp$OutdoorSeating<-factor(yelp$OutdoorSeating)
+yelp$Delivery<-factor(yelp$Delivery)
+yelp$Reservations<-factor(yelp$Reservations)
+
+p1<-ggplot(yelp, aes(TV))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+
+p2<-ggplot(yelp, aes(Attire))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=0.5)
+
+p3<-ggplot(yelp, aes(Alcohol))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+p4<-ggplot(yelp, aes(WiFi))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=0.5)
+p5<-ggplot(yelp, aes(noiselevel))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+p6<-ggplot(yelp, aes(OutdoorSeating))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+p7<-ggplot(yelp, aes(Delivery))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+p8<-ggplot(yelp, aes(Reservations))+
+  geom_bar(width = 0.7, fill="tomato3")+
+  geom_text(stat='count',aes(label=..count..),vjust=1)
+#library(gridExtra)
+grid.arrange(p1,p2,p3,p4)
+grid.arrange(p5,p6,p7,p8)
+```
+###These plots show the proportion of factors in each variable. From those plots we can notice that some factors for some variables have little observations, for example, for Attire, "dressy"(2) and "formal"(3) and for WiFi, "paid"(1) have little observations in the dataset. There are only 21 observations for "formal" in Attire and 95 only for "paid" in WiFi. These are the things that we should know before fitting models since with little data, the coefficients for these factors in our model might be less credible.  
+
+#3. Model Selection
+##For the Model Selection part, first, I randomly selected 15000 observations out of 16016 to build the models, (other 1016s are planing for predictions.) I tested 3 models in total and try to find the best one. I will describe my process and list the output of my final model in the report. (Outputs for other former models are showed in Appendix). 
+  
+  
+##3.1 First model ---fit1, I treat category as a random effect and fit the model, which will fit the data into 10 sub-regression models (10 categories) with different intercepts. And this is how my model (fit1) looks like: 
+```{r echo=FALSE}
+yelp1$Attire<-factor(yelp1$Attire)
+yelp1$noiselevel<-factor(yelp1$noiselevel)
+yelp1$Alcohol<-factor(yelp1$Alcohol)
+yelp1$WiFi<-factor(yelp1$WiFi)
+yelp1$TV<-factor(yelp1$TV)
+yelp1$OutdoorSeating<-factor(yelp1$OutdoorSeating)
+yelp1$Delivery<-factor(yelp1$Delivery)
+yelp1$Reservations<-factor(yelp1$Reservations)
+library(lmerTest)
+fit1<-lmer(average_stars~Avuser+Delivery+WiFi+TV+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1|category), data=yelp1)
+```
+$average-stars=Avuser+Delivery+WiFi+TV+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1|category)$  
+
+###From the information above, we can see that from ANOVA calculation table, for varaible TV, the P-value for its estimate coefficient is 0.7759105, greater than 0.05; and for variable Delivery, the P-value for its estimate coefficient is 0.1509271, also greater than 0.05. It means that these variables are not significant, after checking the summary table for model fit1, I decided that I should remove them from the model. For other varaibles in the model, although the coefficient are relatively small but siginificant. 
+###For the coefficients table, we can see that those coefficients stay the same while intercepts vary for different types of restaurants, but those intercepts only vary a little and they are close to each other. 
+###For the residual plot, although there are some points with relatively large distances from the y=0 line, most of the points are clustered around the zero line, which means the model we used is generally reasonable. 
+  
+##3.2 Second model ---fit2, I still treat category as a random effect and fit the model without variables TV and Delivery, which will fit the data into 10 regression models (10 categories) with different intercepts. And this is how the model (fit2) looks like: 
+
+```{r echo=FALSE}
+fit2<-lmer(average_stars~Avuser+WiFi+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1|category), data=yelp1)
+```
+$average-stars = Avuser+WiFi+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1|category)$
+
+###The second model is basically the same with the first model besides some small changes on coefficients, and residual plot is also similar with the first one. There is also no big changes on the coefficient table, and after checking the ANOVA calculation table, I decide to keep all of my current variables. Also, I notice that the variable Avuser, which is that the mean score that a user give in his grading history, plays a crucial part in this model, since it has the largest coefficient in the model. I am wondering whether the influence of this variable varys from differnt types of restaurants. In this way, my next step will be allowing it to vary with group, which leads to my third model. 
+  
+##3.3 Third model ---fit3, this is my final model. I treat the old category and add Avuser in as random effect that allow the slope to vary, and fit the model, which will fit the data into 10 regression models (10 categories) with different intercepts AND DIFFERENT COEFFICIENTS for the variable of average score of user. And these are the summary, coeficients and residual plot of fit3:
+```{r echo=FALSE}
+fit3<-lmer(average_stars~Avuser+WiFi+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1+Avuser|category), data=yelp1)
+```
+$average-stars=Avuser+WiFi+Alcohol+OutdoorSeating+Reservations+Attire+noiselevel+(1+Avuser|category)$  
+  
+###By comparing the summaries of fit3 and fit2, I notice that for the random effect part, the variance of the category group increases from 0.004522 to 0.33686. This means that there are more different patterns that has showed up between each group, which also means I did not make those groups for nothing. This is also showed in the coefficient table, between the regression function of each group, intercepts vary more and coefficient of Avuser also varies, compare to the results from fit2. This model clearly shows the extent of impact of average score that user give on the average score one type of restaurant receives, for example, with 1 unit increase in Average user score, Mexican and American Traditional restaurants are likely to receive more credit and increase their stars more (about 0.3), compare to other types of restaurants.  
+
+```{r echo=FALSE}
+ggplot(fit3, aes(.fitted, .resid))+
+      geom_point()+
+      geom_hline(yintercept=0, col="red", linetype="dashed")+
+      xlab("Fitted values")+
+      ylab("Residuals")+
+      ggtitle("Residual vs Fitted Plot")+
+      theme_bw()
+```
+###I also check the residual plot for model fit3. Those points are still clustered around that area next to the horizontal line. For this situation, my guess is that this is a relatively large dataset, and the score numbers in dataset, are very close to each other, even with many same scores, in this way, they all stick together on the plot and eventually becomes a shape like this. And the model itself is fine since those fitted values are close to acutal ones and there is no obvious pattern for the points.  
+```{r,echo=FALSE}
+anova(fit2,fit3)
+```
+###This is the anova table for model fit2 and fit3. For the comparison of AIC, I notice that AIC decreases from 14316 to 14217. We prefer lower AICs so it means fit3 does get better.  
+
+```{r, echo=FALSE}
+yelp2$Attire<-factor(yelp2$Attire)
+yelp2$noiselevel<-factor(yelp2$noiselevel)
+yelp2$Alcohol<-factor(yelp2$Alcohol)
+yelp2$WiFi<-factor(yelp2$WiFi)
+yelp2$TV<-factor(yelp2$TV)
+yelp2$OutdoorSeating<-factor(yelp2$OutdoorSeating)
+yelp2$Delivery<-factor(yelp2$Delivery)
+yelp2$Reservations<-factor(yelp2$Reservations)
+
+preds <- predictInterval(fit3, newdata = yelp2, n.sims = 999)
+# plot(preds$fit,yelptest$average_stars)
+# abline(a=0,b=1)
+d<-cbind(preds$fit,yelp2$average_stars)
+colnames(d)<-c("predicted","actual")
+d<-as.data.frame(d)
+ggplot(d)+
+  geom_point(aes(x=predicted,y=actual),color="tomato3")+
+  geom_abline(intercept = 0,slope = 1)
+```
+###Finally, I manage to use my model to do prediction for new data. For those 1016 observations that I did not use before, this plot shows the relationship between predicted and actual data. We can see that nearly every point is around the abline and most of them are very close or even right on the line, which means our model is effective and does reflect the features for this new data set.  
+
+#4. Conclusion
+##4.1 Results
+###Based on the analysis above, we have proved the model fit3 a good model, and we also can see that nearly all the variables that stay in model are significant. So conditions like noise, wifi, reservations, they all influence a restaurant's star for all types of restaurants, but in a relatively subtle way, not very obvious. On the contrary, the variable Avuser, which is the pattern of individual customers, has a huge impact on a restaurant's star. So apart from its food, how to find out consumers'chracteristics is also important for restaurants, since scores on Yelp could influence their business and profits.  
+
+##4.2 Discussions
+###As I mentioned above in the project, it seems that customer's subjectivity and personal preference and habbits play an important part on restaurant's grading scores. In the future study, my priority will be finding that "what determines a person's subjectivity on grading?" and I also think of the case that, for example, a person in a loud noise restaurant might become whiny so he will give a lower score on Yelp in a foul mood, "Is there any relationship between outside conditions and a person's subjectivity?" In my opinion, these questions are all worth to study and talk about. 
+
+
+
+
+#5. Appendix
+
+##Here are some information that you might be interested in:  
+
+##5.1 Entire Data explanation:  
+###business_id: This is the identification for each business(restaurant), which is to make every business unique;  
+###business_name: The name of every restaurant; 
+###State: The state location of every restaurant;  
+###NoiseLevel: The noise level of the restaurant; 4---very loud; 3---loud; 2---average; 1---quiet.  
+###Delivery: Whether a restaurant has delivery service; 0---no; 1---yes.   
+###WiFi: The wifi type for restaurant; 2---free; 1---paid; 0---no. 
+###Alcohol: The alcohol serving type in the restaurant: 2---full_bar; 1---beer_and_wine; 0---none.
+###average_stars: The average stars that customers give for the restaurant on Yelp given the data we have online.  
+###Avuser: For a single business, the average score that its users(customers) usually give for commenting restaurants on their accounts.  
+###TV: Whether a business has a TV; 0---no; 1---yes.  
+###OutdoorSeating: Whether a restaurant set up some seats outside; 0---no; 1---yes.  
+###Reservations: Whether a restaurant can be reserved for tables; 0---no; 1---yes.  
+###Attire: The dress code that a restaurant asks: 3---formal; 2---dressy; 1---casual. 
+###category: The type of food that restaurant provide.  
+
+##5.2 Output for Models
+```{r}
+## 5.2.1 Model: Fit1
+```
+
+```{r}
+### summary for model: fit1
+```
+
+```{r, echo=FALSE}
+library(lmerTest)
+summary(fit1)
+```
+
+```{r}
+###coefficients for model: fit1
+```
+
+```{r, echo=FALSE}
+coef(fit1)
+```
+
+```{r}
+###ANOVA calculation  for model: fit1
+```
+
+
+```{r, echo=FALSE}
+anova(fit1)
+```
+
+
+```{r}
+##Residual plot for model: fit1
+```
+
+```{r echo=FALSE}
+ggplot(fit1, aes(.fitted, .resid))+
+      geom_point()+
+      geom_hline(yintercept=0, col="red", linetype="dashed")+
+      xlab("Fitted values")+
+      ylab("Residuals")+
+      ggtitle("Residual vs Fitted Plot")+
+      theme_bw()
+```
+
+```{r}
+## 5.2.2 Model: Fit2
+```
+
+```{r}
+### summary for model: fit2
+```
+
+```{r, echo=FALSE}
+summary(fit2,correlation=T)
+```
+
+```{r}
+###coefficients for model: fit2
+```
+
+```{r,echo=FALSE}
+coef(fit2)
+```
+
+```{r}
+###ANOVA calculation  for model: fit2
+```
+
+
+```{r, echo=FALSE}
+anova(fit2)
+```
+
+
+```{r}
+##Residual plot for model: fit2
+```
+
+```{r echo=FALSE}
+ggplot(fit2, aes(.fitted, .resid))+
+      geom_point()+
+      geom_hline(yintercept=0, col="red", linetype="dashed")+
+      xlab("Fitted values")+
+      ylab("Residuals")+
+      ggtitle("Residual vs Fitted Plot")+
+      theme_bw()
+```
+
+```{r}
+## 5.2.3 Model: Fit3
+```
+
+```{r}
+##summary for model: fit3
+summary(fit3,correlation=T,maxsum=50)
+```
+
+```{r}
+##coefficients for model: fit3
+coef(fit3)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
